@@ -80,7 +80,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd apps/frontend
-          npm ci
+          npm install
 
       - name: Build application
         run: |
