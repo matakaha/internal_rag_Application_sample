@@ -131,10 +131,8 @@ Write-Host "Service Principal Object ID: $SP_OBJECT_ID"
 $GITHUB_ORG = "<your-github-username-or-org>"
 $GITHUB_REPO = "internal_rag_Application_sample"
 
-# Federated Credentialを作成
-az ad app federated-credential create `
-    --id $APP_ID `
-    --parameters @- << EOF
+# Federated Credential設定をJSONファイルとして作成
+$federatedCredJson = @"
 {
   "name": "github-actions-main",
   "issuer": "https://token.actions.githubusercontent.com",
@@ -144,7 +142,21 @@ az ad app federated-credential create `
     "api://AzureADTokenExchange"
   ]
 }
-EOF
+"@
+
+# 一時ファイルに保存
+$tempFile = New-TemporaryFile
+$federatedCredJson | Out-File -FilePath $tempFile.FullName -Encoding UTF8
+
+# Federated Credentialを作成
+az ad app federated-credential create `
+    --id $APP_ID `
+    --parameters "@$($tempFile.FullName)"
+
+# 一時ファイルを削除
+Remove-Item $tempFile.FullName
+
+Write-Host "✅ Federated Credential created successfully" -ForegroundColor Green
 ```
 
 #### 2.3 RBACロールの割り当て
