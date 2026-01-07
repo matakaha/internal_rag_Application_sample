@@ -90,6 +90,16 @@ jobs:
           echo "Build completed. Contents of dist:"
           ls -la dist/
 
+      - name: Install zip utility
+        run: |
+          if ! command -v zip &> /dev/null; then
+            echo "Installing zip..."
+            sudo apt-get update -qq
+            sudo apt-get install -y zip
+          else
+            echo "zip is already installed"
+          fi
+
       - name: Deploy to Azure Web App
         run: |
           cd apps/frontend
