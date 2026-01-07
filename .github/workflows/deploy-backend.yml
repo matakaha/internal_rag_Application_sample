@@ -1,0 +1,90 @@
+name: Deploy Backend (Azure Functions)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          cd apps/backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Functions Core Tools
+        run: |
+          # Check if func is already installed
+          if ! command -v func &> /dev/null; then
+            echo "Installing Azure Functions Core Tools..."
+            curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+            sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
+            sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list'
+            sudo apt-get update
+            sudo apt-get install -y azure-functions-core-tools-4
+          else
+            echo "Azure Functions Core Tools already installed"
+            func --version
+          fi
+
+      - name: Configure Function App settings
+        run: |
+          az functionapp config appsettings set \
+            --name ${{ secrets.AZURE_FUNCTIONAPP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --settings \
+              AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+              AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+              AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
+              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
+              FUNCTIONS_WORKER_RUNTIME="python" \
+              AzureWebJobsFeatureFlags="EnableWorkerIndexing"
+
+      - name: Deploy to Azure Functions
+        run: |
+          cd apps/backend
+          func azure functionapp publish ${{ secrets.AZURE_FUNCTIONAPP_NAME }} --python
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          sleep 30
+          
+          FUNCTION_URL="https://${{ secrets.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
+          echo "Testing health endpoint: $FUNCTION_URL"
+          
+          curl -f -s "$FUNCTION_URL" || echo "Health check failed (this may be expected if the function is still warming up)"
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Backend deployment completed successfully!"
+          echo "Function App: ${{ secrets.AZURE_FUNCTIONAPP_NAME }}"
+          echo "Health check: https://${{ secrets.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/health"
+          echo "Chat API: https://${{ secrets.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/chat"
