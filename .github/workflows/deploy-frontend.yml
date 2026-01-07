@@ -1,0 +1,122 @@
+name: Deploy Frontend (Web Apps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get API endpoint from Web App settings
+        id: get-config
+        run: |
+          # Get VITE_API_ENDPOINT from Web App Application Settings
+          API_ENDPOINT=$(az webapp config appsettings list \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query "[?name=='VITE_API_ENDPOINT'].value | [0]" -o tsv)
+          
+          if [ -z "$API_ENDPOINT" ]; then
+            # Fallback to Functions App URL if not set
+            API_ENDPOINT="https://${{ secrets.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net"
+            echo "⚠️ VITE_API_ENDPOINT not found in Web App settings, using default: $API_ENDPOINT"
+          else
+            echo "✅ Using VITE_API_ENDPOINT from Web App settings: $API_ENDPOINT"
+          fi
+          
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Generate config.js
+        run: |
+          cd apps/frontend/public
+          cat > config.js << EOF
+          // This file is dynamically generated during deployment
+          // Generated at: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          window.APP_CONFIG = {
+            apiEndpoint: '${{ steps.get-config.outputs.api_endpoint }}'
+          };
+          EOF
+          
+          echo "Generated config.js:"
+          cat config.js
+
+      - name: Install dependencies
+        run: |
+          cd apps/frontend
+          npm ci
+
+      - name: Build application
+        run: |
+          cd apps/frontend
+          npm run build
+          
+          echo "Build completed. Contents of dist:"
+          ls -la dist/
+
+      - name: Deploy to Azure Web App
+        run: |
+          cd apps/frontend
+          
+          # Create deployment zip
+          cd dist
+          zip -r ../deploy.zip .
+          cd ..
+          
+          # Deploy using az webapp deploy
+          az webapp deploy \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --name ${{ secrets.AZURE_WEBAPP_NAME }} \
+            --src-path deploy.zip \
+            --type zip \
+            --async true
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to complete..."
+          sleep 30
+          
+          WEBAPP_URL="https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          echo "Testing Web App: $WEBAPP_URL"
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$WEBAPP_URL")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Web App is responding (HTTP $HTTP_STATUS)"
+          else
+            echo "⚠️ Web App returned HTTP $HTTP_STATUS (this may be expected if still warming up)"
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Frontend deployment completed successfully!"
+          echo "Web App: ${{ secrets.AZURE_WEBAPP_NAME }}"
+          echo "URL: https://${{ secrets.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          echo "API Endpoint: ${{ steps.get-config.outputs.api_endpoint }}"
