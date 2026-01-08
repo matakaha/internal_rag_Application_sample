@@ -22,17 +22,27 @@ AZURE_OPENAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 AZURE_SEARCH_ENDPOINT = os.environ.get("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX", "redlist-index")
 
-# Initialize Azure OpenAI client with Managed Identity
-credential = DefaultAzureCredential()
-token_provider = get_bearer_token_provider(
-    credential, "https://cognitiveservices.azure.com/.default"
-)
+# Global client instance (initialized lazily)
+_client = None
+_credential = None
+_token_provider = None
 
-client = AzureOpenAI(
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    azure_ad_token_provider=token_provider,
-    api_version="2024-02-15-preview"
-)
+def get_openai_client():
+    """Get or create Azure OpenAI client with lazy initialization"""
+    global _client, _credential, _token_provider
+    
+    if _client is None:
+        _credential = DefaultAzureCredential()
+        _token_provider = get_bearer_token_provider(
+            _credential, "https://cognitiveservices.azure.com/.default"
+        )
+        _client = AzureOpenAI(
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            azure_ad_token_provider=_token_provider,
+            api_version="2024-02-15-preview"
+        )
+    
+    return _client
 
 
 @app.route(route="health", methods=["GET"])
@@ -112,6 +122,9 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         }
         
         logger.info(f"Calling Azure OpenAI with On Your Data. Index: {AZURE_SEARCH_INDEX}")
+        
+        # Get Azure OpenAI client (lazy initialization)
+        client = get_openai_client()
         
         # Call Azure OpenAI with streaming
         try:
