@@ -1,8 +1,8 @@
 # Azure Functions
 azure-functions==1.18.0
 
-# Azure OpenAI
-openai==1.12.0
+# Azure OpenAI (updated for compatibility with latest httpx)
+openai>=1.54.0
 
 # Azure Identity and Authentication
 azure-identity==1.15.0
