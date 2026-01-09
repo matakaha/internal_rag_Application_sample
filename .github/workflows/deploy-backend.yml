@@ -32,6 +32,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Azure CLI
+        run: |
+          # Check if Azure CLI is already installed
+          if ! command -v az &> /dev/null; then
+            echo "Installing Azure CLI..."
+            curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+          else
+            echo "Azure CLI already installed"
+            az --version
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -60,12 +71,12 @@ jobs:
             --name ${{ secrets.AZURE_FUNCTIONAPP_NAME }} \
             --resource-group ${{ secrets.RESOURCE_GROUP }} \
             --settings \
+              FUNCTIONS_WORKER_RUNTIME="python" \
+              AzureWebJobsFeatureFlags="EnableWorkerIndexing" \
               AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
               AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
               AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
-              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
-              FUNCTIONS_WORKER_RUNTIME="python" \
-              AzureWebJobsFeatureFlags="EnableWorkerIndexing"
+              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}"
 
       - name: Deploy to Azure Functions
         run: |
