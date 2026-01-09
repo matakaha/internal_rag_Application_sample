@@ -124,17 +124,18 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
                 query_type="semantic",
                 semantic_configuration_name="semantic-config",
                 top=5,
-                select=["namej", "species", "category", "description"]
+                select=["japanese_name", "scientific_name", "category", "content", "rank"]
             )
             
             # Collect search results
             documents = []
             for result in search_results:
                 doc = {
-                    "name": result.get("namej", ""),
-                    "species": result.get("species", ""),
+                    "japanese_name": result.get("japanese_name", ""),
+                    "scientific_name": result.get("scientific_name", ""),
                     "category": result.get("category", ""),
-                    "description": result.get("description", "")
+                    "rank": result.get("rank", ""),
+                    "content": result.get("content", "")
                 }
                 documents.append(doc)
             
