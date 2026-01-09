@@ -157,10 +157,11 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         if documents:
             context = "以下は検索結果から得られた情報です:\n\n"
             for i, doc in enumerate(documents, 1):
-                context += f"{i}. {doc['name']} ({doc['species']})\n"
+                context += f"{i}. {doc['japanese_name']} ({doc['scientific_name']})\n"
                 context += f"   カテゴリ: {doc['category']}\n"
-                if doc['description']:
-                    context += f"   説明: {doc['description']}\n"
+                context += f"   ランク: {doc['rank']}\n"
+                if doc['content']:
+                    context += f"   内容: {doc['content']}\n"
                 context += "\n"
         else:
             context = "関連する情報が見つかりませんでした。"
