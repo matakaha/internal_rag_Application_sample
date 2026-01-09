@@ -126,50 +126,42 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         # Get Azure OpenAI client (lazy initialization)
         client = get_openai_client()
         
-        # Call Azure OpenAI with streaming
+        # Call Azure OpenAI (non-streaming for compatibility)
         try:
             response = client.chat.completions.create(
                 model=AZURE_OPENAI_DEPLOYMENT,
                 messages=messages,
                 extra_body=extra_body,
-                stream=True,
+                stream=False,
                 temperature=0.7,
                 max_tokens=800
             )
             
-            # Stream response as Server-Sent Events (SSE)
-            def generate():
-                try:
-                    for chunk in response:
-                        if chunk.choices:
-                            delta = chunk.choices[0].delta
-                            if delta.content:
-                                # SSE format: data: {json}\n\n
-                                data = json.dumps({
-                                    "content": delta.content
-                                }, ensure_ascii=False)
-                                yield f"data: {data}\n\n"
-                    
-                    # Send completion signal
-                    yield "data: [DONE]\n\n"
-                    logger.info("Streaming response completed successfully")
-                    
-                except Exception as stream_error:
-                    error_msg = f"Streaming error: {str(stream_error)}"
-                    logger.error(error_msg, exc_info=True)
-                    error_data = json.dumps({
-                        "error": error_msg
-                    }, ensure_ascii=False)
-                    yield f"data: {error_data}\n\n"
+            # Extract response content
+            content = ""
+            citations = []
+            
+            if response.choices:
+                choice = response.choices[0]
+                if choice.message.content:
+                    content = choice.message.content
+                
+                # Extract citations if available
+                if hasattr(choice.message, 'context') and choice.message.context:
+                    if hasattr(choice.message.context, 'citations'):
+                        citations = choice.message.context.citations
+            
+            logger.info("Response generated successfully")
             
             return func.HttpResponse(
-                generate(),
-                mimetype="text/event-stream",
+                json.dumps({
+                    "content": content,
+                    "citations": citations
+                }, ensure_ascii=False),
+                mimetype="application/json",
                 status_code=200,
                 headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no"
+                    "Cache-Control": "no-cache"
                 }
             )
             
