@@ -1,14 +1,15 @@
 """
 Azure Functions backend for RAG Chat Application
-Uses Azure OpenAI "On Your Data" feature with AI Search integration
+Standard RAG pattern: Function App directly accesses both Azure AI Search and Azure OpenAI
 """
 import azure.functions as func
 import json
 import logging
 import os
-from typing import AsyncGenerator
 from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from azure.search.documents import SearchClient
+from azure.core.credentials import AzureKeyCredential
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,27 +23,44 @@ AZURE_OPENAI_DEPLOYMENT = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
 AZURE_SEARCH_ENDPOINT = os.environ.get("AZURE_SEARCH_ENDPOINT")
 AZURE_SEARCH_INDEX = os.environ.get("AZURE_SEARCH_INDEX", "redlist-index")
 
-# Global client instance (initialized lazily)
-_client = None
+# Global client instances (initialized lazily)
+_openai_client = None
+_search_client = None
 _credential = None
 _token_provider = None
 
 def get_openai_client():
     """Get or create Azure OpenAI client with lazy initialization"""
-    global _client, _credential, _token_provider
+    global _openai_client, _credential, _token_provider
     
-    if _client is None:
+    if _openai_client is None:
         _credential = DefaultAzureCredential()
         _token_provider = get_bearer_token_provider(
             _credential, "https://cognitiveservices.azure.com/.default"
         )
-        _client = AzureOpenAI(
+        _openai_client = AzureOpenAI(
             azure_endpoint=AZURE_OPENAI_ENDPOINT,
             azure_ad_token_provider=_token_provider,
             api_version="2024-02-15-preview"
         )
     
-    return _client
+    return _openai_client
+
+def get_search_client():
+    """Get or create Azure AI Search client with lazy initialization"""
+    global _search_client, _credential
+    
+    if _search_client is None:
+        if _credential is None:
+            _credential = DefaultAzureCredential()
+        
+        _search_client = SearchClient(
+            endpoint=AZURE_SEARCH_ENDPOINT,
+            index_name=AZURE_SEARCH_INDEX,
+            credential=_credential
+        )
+    
+    return _search_client
 
 
 @app.route(route="health", methods=["GET"])
@@ -66,8 +84,9 @@ def health(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="chat", methods=["POST"])
 def chat(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Chat endpoint with Azure OpenAI On Your Data
-    Supports streaming responses
+    Chat endpoint with standard RAG pattern
+    1. Search Azure AI Search for relevant documents
+    2. Send results as context to Azure OpenAI
     """
     try:
         # Parse request body
@@ -94,44 +113,70 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=500
             )
         
-        # Configure Azure OpenAI with On Your Data
+        # Step 1: Search Azure AI Search
+        logger.info(f"Searching Azure AI Search. Index: {AZURE_SEARCH_INDEX}")
+        search_client = get_search_client()
+        
+        try:
+            # Perform semantic search
+            search_results = search_client.search(
+                search_text=user_message,
+                query_type="semantic",
+                semantic_configuration_name="semantic-config",
+                top=5,
+                select=["namej", "species", "category", "description"]
+            )
+            
+            # Collect search results
+            documents = []
+            for result in search_results:
+                doc = {
+                    "name": result.get("namej", ""),
+                    "species": result.get("species", ""),
+                    "category": result.get("category", ""),
+                    "description": result.get("description", "")
+                }
+                documents.append(doc)
+            
+            logger.info(f"Found {len(documents)} documents")
+            
+        except Exception as search_error:
+            error_msg = f"Azure AI Search error: {str(search_error)}"
+            logger.error(error_msg, exc_info=True)
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "検索中にエラーが発生しました",
+                    "details": error_msg
+                }, ensure_ascii=False),
+                mimetype="application/json",
+                status_code=500
+            )
+        
+        # Step 2: Build context from search results
+        if documents:
+            context = "以下は検索結果から得られた情報です:\n\n"
+            for i, doc in enumerate(documents, 1):
+                context += f"{i}. {doc['name']} ({doc['species']})\n"
+                context += f"   カテゴリ: {doc['category']}\n"
+                if doc['description']:
+                    context += f"   説明: {doc['description']}\n"
+                context += "\n"
+        else:
+            context = "関連する情報が見つかりませんでした。"
+        
+        # Step 3: Call Azure OpenAI with context
+        logger.info("Calling Azure OpenAI with search context")
+        openai_client = get_openai_client()
+        
         messages = [
-            {"role": "system", "content": "あなたは環境省のレッドリスト（絶滅危惧種）に関する専門家アシスタントです。ユーザーの質問に対して、提供されたデータに基づいて正確かつ丁寧に回答してください。"},
-            {"role": "user", "content": user_message}
+            {"role": "system", "content": "あなたは環境省のレッドリスト（絶滅危惧種）に関する専門家アシスタントです。提供された検索結果に基づいて、ユーザーの質問に正確かつ丁寧に回答してください。検索結果に情報がない場合は、その旨を伝えてください。"},
+            {"role": "user", "content": f"検索コンテキスト:\n{context}\n\nユーザーの質問: {user_message}"}
         ]
         
-        # Azure OpenAI On Your Data configuration
-        extra_body = {
-            "data_sources": [
-                {
-                    "type": "azure_search",
-                    "parameters": {
-                        "endpoint": AZURE_SEARCH_ENDPOINT,
-                        "index_name": AZURE_SEARCH_INDEX,
-                        "authentication": {
-                            "type": "system_assigned_managed_identity"
-                        },
-                        "query_type": "semantic",
-                        "semantic_configuration": "semantic-config",
-                        "top_n_documents": 5,
-                        "in_scope": True,
-                        "strictness": 3
-                    }
-                }
-            ]
-        }
-        
-        logger.info(f"Calling Azure OpenAI with On Your Data. Index: {AZURE_SEARCH_INDEX}")
-        
-        # Get Azure OpenAI client (lazy initialization)
-        client = get_openai_client()
-        
-        # Call Azure OpenAI (non-streaming for compatibility)
         try:
-            response = client.chat.completions.create(
+            response = openai_client.chat.completions.create(
                 model=AZURE_OPENAI_DEPLOYMENT,
                 messages=messages,
-                extra_body=extra_body,
                 stream=False,
                 temperature=0.7,
                 max_tokens=800
@@ -139,24 +184,17 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
             
             # Extract response content
             content = ""
-            citations = []
-            
             if response.choices:
                 choice = response.choices[0]
                 if choice.message.content:
                     content = choice.message.content
-                
-                # Extract citations if available
-                if hasattr(choice.message, 'context') and choice.message.context:
-                    if hasattr(choice.message.context, 'citations'):
-                        citations = choice.message.context.citations
             
             logger.info("Response generated successfully")
             
             return func.HttpResponse(
                 json.dumps({
                     "content": content,
-                    "citations": citations
+                    "sources": documents
                 }, ensure_ascii=False),
                 mimetype="application/json",
                 status_code=200,
