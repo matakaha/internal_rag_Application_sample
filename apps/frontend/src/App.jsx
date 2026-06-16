@@ -32,7 +32,7 @@ function App() {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsLoading(true);
 
-    // Add empty assistant message for streaming
+    // Add empty assistant message placeholder
     const assistantMessageIndex = messages.length + 1;
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
@@ -112,6 +112,33 @@ function App() {
               <div className="message-content">
                 {msg.content || (isLoading && index === messages.length - 1 ? '考え中...' : '')}
               </div>
+              {msg.role === 'assistant' && msg.citations?.length > 0 && (
+                <div className="message-citations">
+                  <div className="message-citations-title">根拠</div>
+                  <ul>
+                    {msg.citations.map((citation, citationIndex) => (
+                      <li key={`${index}-${citationIndex}`}>
+                        <div className="citation-title">
+                          {citation.title || citation.filepath || `参照 ${citationIndex + 1}`}
+                        </div>
+                        {citation.content && (
+                          <div className="citation-content">{citation.content}</div>
+                        )}
+                        {citation.url && (
+                          <a
+                            href={citation.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="citation-link"
+                          >
+                            参照元を開く
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           ))}
 

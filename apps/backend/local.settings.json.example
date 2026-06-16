@@ -6,8 +6,10 @@
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AZURE_OPENAI_ENDPOINT": "https://your-openai-service.openai.azure.com/",
     "AZURE_OPENAI_DEPLOYMENT": "gpt-4",
+    "AZURE_OPENAI_API_VERSION": "2024-02-01",
     "AZURE_SEARCH_ENDPOINT": "https://your-search-service.search.windows.net",
     "AZURE_SEARCH_INDEX": "redlist-index",
+    "AZURE_SEARCH_SEMANTIC_CONFIGURATION": "semantic-config",
     "APPINSIGHTS_INSTRUMENTATIONKEY": "your-app-insights-key"
   }
 }

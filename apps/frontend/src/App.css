@@ -142,6 +142,52 @@ body {
   margin-right: 2rem;
 }
 
+.message-citations {
+  margin-top: 0.75rem;
+  margin-right: 2rem;
+  padding: 0.75rem 1rem;
+  background: #faf7ff;
+  border-left: 4px solid #8e63c7;
+  border-radius: 8px;
+}
+
+.message-citations-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6a1b9a;
+  margin-bottom: 0.5rem;
+}
+
+.message-citations ul {
+  list-style: none;
+}
+
+.message-citations li + li {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e6dcf5;
+}
+
+.citation-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.citation-content {
+  color: #555;
+  white-space: pre-wrap;
+  margin-bottom: 0.35rem;
+}
+
+.citation-link {
+  color: #667eea;
+  text-decoration: none;
+}
+
+.citation-link:hover {
+  text-decoration: underline;
+}
+
 .error-message {
   background: #ffebee;
   color: #c62828;
@@ -238,6 +284,10 @@ body {
   }
   
   .message.assistant .message-content {
+    margin-right: 0.5rem;
+  }
+
+  .message-citations {
     margin-right: 0.5rem;
   }
   

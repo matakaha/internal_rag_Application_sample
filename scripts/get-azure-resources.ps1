@@ -107,7 +107,7 @@ $storage = $storageList | Select-Object -First 1
 if ($storage) {
     Write-Host "   Name: $($storage.name)" -ForegroundColor Green
     $envVars.AZURE_STORAGE_ACCOUNT_NAME = $storage.name
-    $envVars.AZURE_STORAGE_CONTAINER = "redlist-data"
+    $envVars.AZURE_STORAGE_CONTAINER = "rag-documents"
 }
 
 # Get App Service (if exists)
@@ -179,12 +179,14 @@ AZURE_AI_PROJECT_NAME=$($envVars.AZURE_AI_PROJECT_NAME)
 # Azure OpenAI Settings (via Foundry)
 AZURE_OPENAI_ENDPOINT=$($envVars.AZURE_AI_ENDPOINT)
 AZURE_OPENAI_DEPLOYMENT=$($envVars.AZURE_OPENAI_DEPLOYMENT)
+AZURE_OPENAI_API_VERSION=2024-02-01
 AZURE_OPENAI_EMBEDDING_DEPLOYMENT=$($envVars.AZURE_OPENAI_EMBEDDING_DEPLOYMENT)
 
 # Azure AI Search Settings
 AZURE_SEARCH_SERVICE_NAME=$($envVars.AZURE_SEARCH_SERVICE_NAME)
 AZURE_SEARCH_ENDPOINT=$($envVars.AZURE_SEARCH_ENDPOINT)
 AZURE_SEARCH_INDEX=$($envVars.AZURE_SEARCH_INDEX)
+AZURE_SEARCH_SEMANTIC_CONFIGURATION=semantic-config
 
 # Azure Storage Settings
 AZURE_STORAGE_ACCOUNT_NAME=$($envVars.AZURE_STORAGE_ACCOUNT_NAME)
@@ -224,8 +226,10 @@ $localSettingsContent = @"
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AZURE_OPENAI_ENDPOINT": "$($envVars.AZURE_AI_ENDPOINT)",
     "AZURE_OPENAI_DEPLOYMENT": "$($envVars.AZURE_OPENAI_DEPLOYMENT)",
+    "AZURE_OPENAI_API_VERSION": "2024-02-01",
     "AZURE_SEARCH_ENDPOINT": "$($envVars.AZURE_SEARCH_ENDPOINT)",
-    "AZURE_SEARCH_INDEX": "$($envVars.AZURE_SEARCH_INDEX)"
+    "AZURE_SEARCH_INDEX": "$($envVars.AZURE_SEARCH_INDEX)",
+    "AZURE_SEARCH_SEMANTIC_CONFIGURATION": "semantic-config"
   }
 }
 "@

@@ -75,8 +75,10 @@ jobs:
               AzureWebJobsFeatureFlags="EnableWorkerIndexing" \
               AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
               AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+              AZURE_OPENAI_API_VERSION="2024-02-01" \
               AZURE_SEARCH_ENDPOINT="${{ secrets.AZURE_SEARCH_ENDPOINT }}" \
-              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}"
+              AZURE_SEARCH_INDEX="${{ secrets.AZURE_SEARCH_INDEX }}" \
+              AZURE_SEARCH_SEMANTIC_CONFIGURATION="semantic-config"
 
       - name: Deploy to Azure Functions
         run: |
