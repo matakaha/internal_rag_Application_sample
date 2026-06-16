@@ -41,7 +41,7 @@
 ┌─────────────────────────────────┐
 │  Azure Functions (Backend)      │
 │  - Python 3.11                  │
-│  - /api/chat (Streaming)        │
+│  - /api/chat (Thin Backend)     │
 │  - /api/health                  │
 └────────┬────────────────────────┘
          │ Private Endpoint
@@ -284,8 +284,10 @@ code local.settings.json
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AZURE_OPENAI_ENDPOINT": "https://your-openai.openai.azure.com/",
     "AZURE_OPENAI_DEPLOYMENT": "gpt-4",
+    "AZURE_OPENAI_API_VERSION": "2024-02-01",
     "AZURE_SEARCH_ENDPOINT": "https://your-search.search.windows.net",
-    "AZURE_SEARCH_INDEX": "redlist-index"
+    "AZURE_SEARCH_INDEX": "redlist-index",
+    "AZURE_SEARCH_SEMANTIC_CONFIGURATION": "semantic-config"
   }
 }
 ```
@@ -336,7 +338,7 @@ npm run dev
 1. フロントエンド（`http://localhost:5173`）にアクセス
 2. チャット入力欄に質問を入力（例: 「イリオモテヤマネコについて教えてください」）
 3. 送信ボタンをクリック
-4. ストリーミング表示でAIの回答が表示されることを確認
+4. AI Searchに基づく回答と根拠が表示されることを確認
 
 ### 6. GitHub Actionsワークフローの実行
 
@@ -398,7 +400,7 @@ start https://<your-webapp-name>.azurewebsites.net
 1. ブラウザで `https://<your-webapp-name>.azurewebsites.net` を開く
 2. チャット画面が表示されることを確認
 3. 質問を入力して送信
-4. AIの回答がストリーミング表示されることを確認
+4. AIの回答が表示され、必要に応じて根拠情報が返ることを確認
 
 #### 7.2 サンプル質問
 
@@ -450,7 +452,7 @@ Azure Portalでの確認:
 - ✅ GitHub Actionsでバックエンドがデプロイされている
 - ✅ GitHub Actionsでフロントエンドがデプロイされている
 - ✅ Web Appsにアクセスしてチャットが動作する
-- ✅ ストリーミングレスポンスが正常に表示される
+- ✅ Azure OpenAI On Your Data に基づく回答が返る
 
 ## トラブルシューティング
 
@@ -537,23 +539,34 @@ az monitor app-insights query `
 
 ### AI Search接続エラー
 
-**症状**: AI Searchからデータを取得できない
+**症状**: Azure OpenAI On Your Data でAI Searchのデータが使えない
 
 **確認手順**:
 
-1. **Managed Identityの権限確認**
+1. **Azure OpenAI / Foundry Managed Identityの権限確認**
 
 ```powershell
+# Azure OpenAI / Foundry のManaged Identity Object IDを取得
+$OPENAI_PRINCIPAL_ID = az cognitiveservices account show `
+    --resource-group $RESOURCE_GROUP `
+    --name <openai-name> `
+    --query identity.principalId -o tsv
+
 # ロール割り当てを確認
 az role assignment list `
-    --assignee $PRINCIPAL_ID `
-    --query "[?roleDefinitionName=='Search Index Data Reader']" `
+    --assignee $OPENAI_PRINCIPAL_ID `
+    --query "[?roleDefinitionName=='Search Index Data Reader' || roleDefinitionName=='Search Service Contributor']" `
     --output table
 
 # ロールが無い場合は割り当て
 az role assignment create `
-    --assignee $PRINCIPAL_ID `
+    --assignee $OPENAI_PRINCIPAL_ID `
     --role "Search Index Data Reader" `
+    --scope "/subscriptions/<subscription-id>/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Search/searchServices/<search-name>"
+
+az role assignment create `
+    --assignee $OPENAI_PRINCIPAL_ID `
+    --role "Search Service Contributor" `
     --scope "/subscriptions/<subscription-id>/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Search/searchServices/<search-name>"
 ```
 
@@ -569,39 +582,37 @@ az search index show `
 # ドキュメント数を確認（Azure Portalで確認推奨）
 ```
 
-### ストリーミングレスポンスが表示されない
+### 根拠付き回答にならない
 
-**症状**: チャットの回答が一度に表示される、またはストリーミングが機能しない
+**症状**: 回答は返るが、AI Searchに基づく回答になっていない、または根拠情報が含まれない
 
 **確認手順**:
 
-1. **ブラウザの開発者ツールで確認**
+1. **Function Appの設定を確認**
 
-- NetworkタブでAPIリクエストを確認
-- Content-Type: `text/event-stream`になっているか確認
-- Responseタブでストリーミングデータを確認
+```powershell
+az functionapp config appsettings list `
+    --name $FUNCTIONAPP_NAME `
+    --resource-group $RESOURCE_GROUP `
+    --query "[?name=='AZURE_SEARCH_ENDPOINT' || name=='AZURE_SEARCH_INDEX' || name=='AZURE_SEARCH_SEMANTIC_CONFIGURATION']" `
+    --output table
+```
 
 2. **バックエンドログの確認**
 
 ```powershell
-# ストリーミング関連のログを検索
+# Azure OpenAI On Your Data 関連のログを検索
 az monitor app-insights query `
     --app $APPINSIGHTS_NAME `
-    --analytics-query "traces | where message contains 'Streaming' | order by timestamp desc | take 20" `
+    --analytics-query "traces | where message contains 'On Your Data' or message contains 'Azure OpenAI API error' | order by timestamp desc | take 20" `
     --output table
 ```
 
-3. **Web Appsのバッファリング設定**
+3. **閉域接続と権限を確認**
 
-Azure Web AppsでHTTPレスポンスバッファリングが有効になっている場合、ストリーミングが機能しません。
-
-```powershell
-# Web Appsの設定確認
-az webapp config show `
-    --resource-group $RESOURCE_GROUP `
-    --name $WEBAPP_NAME `
-    --query "httpLoggingEnabled"
-```
+- Functions から Azure OpenAI / Foundry に到達できること
+- Azure OpenAI / Foundry Managed Identity が AI Search にアクセスできること
+- `semantic-config` がインデックスに存在すること
 
 ### GitHub Actions デプロイエラー
 

@@ -19,7 +19,7 @@
 
 - ✅ **閉域環境対応** - Private Endpointを使用したセキュアな構成
 - ✅ **Azure OpenAI On Your Data** - AI Searchとのシームレスな統合
-- ✅ **ストリーミングレスポンス** - リアルタイムでAI回答を表示
+- ✅ **グラウンデッド回答** - AI Searchの検索結果に基づく回答生成
 - ✅ **Managed Identity認証** - キーレスなセキュアな認証
 - ✅ **GitHub Actions CI/CD** - OIDC認証によるセキュアなデプロイ
 - ✅ **段階的チュートリアル** - Step01～04で体系的に学習
@@ -42,7 +42,7 @@
 │  │  │  (Backend API)   │ Private │  (On Your Data)  │         │ │
 │  │  │  - Python 3.11   │Endpoint │  - GPT-4         │         │ │
 │  │  │  - /api/chat     │         │  - Embedding     │         │ │
-│  │  │  - Streaming     │         └──────────────────┘         │ │
+│  │  │  - Thin Backend  │         └──────────────────┘         │ │
 │  │  └──────────────────┘                   │                   │ │
 │  │           ▲                              │ Private           │ │
 │  │           │                              │ Endpoint          │ │
@@ -235,7 +235,7 @@ cd apps/frontend && npm install && npm run dev
 2. **Azure OpenAI On Your Data** - AI SearchとOpenAIの統合方法
 3. **閉域環境構築** - Private Endpointを使用したセキュアな構成
 4. **Managed Identity** - キーレス認証のベストプラクティス
-5. **ストリーミングレスポンス** - Server-Sent Events (SSE)の実装
+5. **グラウンデッド回答** - 検索結果に基づく回答生成と引用の扱い
 6. **CI/CD** - GitHub ActionsとOIDCを使ったセキュアなデプロイ
 
 ## 🔒 セキュリティ
@@ -249,6 +249,8 @@ cd apps/frontend && npm install && npm run dev
 - ✅ **Application Insights** - 詳細なログとモニタリング
 
 > **注意**: このサンプルは学習目的であり、認証・認可機能は含まれていません。本番環境では適切な認証機能（Azure AD B2C等）を追加してください。
+>
+> また、Azure OpenAI On Your Data を**閉域RAG**として成立させるには、Functions から Azure OpenAI に到達できるだけでなく、**Azure OpenAI / Foundry から Azure AI Search へもプライベート接続**できる構成が必要です。このリポジトリでは、その前提ネットワークは別のインフラ用リポジトリで構築済みである想定です。
 
 ## 🤝 コントリビューション
 

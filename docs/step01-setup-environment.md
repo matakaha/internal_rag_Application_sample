@@ -23,6 +23,7 @@
 - Virtual Network (vNet)
 - Microsoft Foundry (Private Endpoint付き)
 - Azure AI Search (Private Endpoint付き)
+- Azure OpenAI / Foundry から Azure AI Search へ閉域接続できる構成（Shared Private Link または同等のプライベート接続）
 - Azure Storage Account
 - Azure Functions (AppServicePlan B1共有、vNet統合済み)
 - App Service Plan (B1) - フロントエンド/バックエンド共有
@@ -166,7 +167,7 @@ python -m venv venv
 python -m pip install --upgrade pip
 
 # 依存パッケージをインストール
-pip install -r requirements.txt
+pip install -r apps/backend/requirements.txt
 
 # インストール確認
 pip list
@@ -188,11 +189,12 @@ RESOURCE_GROUP=rg-internal-rag-dev
 # Azure OpenAI
 AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
 AZURE_OPENAI_DEPLOYMENT=gpt-4
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_API_VERSION=2024-02-01
 
 # Azure AI Search
 AZURE_SEARCH_ENDPOINT=https://your-search.search.windows.net
 AZURE_SEARCH_INDEX=redlist-index
+AZURE_SEARCH_SEMANTIC_CONFIGURATION=semantic-config
 
 # Azure Storage
 AZURE_STORAGE_ACCOUNT=yourstorageaccount
@@ -216,8 +218,10 @@ AZURE_FUNCTIONS_NAME=func-internal-rag-dev
     "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
     "AZURE_OPENAI_ENDPOINT": "https://your-openai.openai.azure.com/",
     "AZURE_OPENAI_DEPLOYMENT": "gpt-4",
+    "AZURE_OPENAI_API_VERSION": "2024-02-01",
     "AZURE_SEARCH_ENDPOINT": "https://your-search.search.windows.net",
-    "AZURE_SEARCH_INDEX": "redlist-index"
+    "AZURE_SEARCH_INDEX": "redlist-index",
+    "AZURE_SEARCH_SEMANTIC_CONFIGURATION": "semantic-config"
   }
 }
 "@ | Out-File -FilePath local.settings.json -Encoding UTF8
@@ -417,21 +421,45 @@ az role assignment create `
     --assignee $PRINCIPAL_ID `
     --role "Cognitive Services OpenAI User" `
     --scope "/subscriptions/<subscription-id>/resourceGroups/rg-internal-rag-dev/providers/Microsoft.CognitiveServices/accounts/<openai-name>"
+```
 
-# Search Index Data Reader
+### 12. Azure OpenAI / Foundry Managed Identityの権限設定
+
+Azure OpenAI On Your Data では、**検索を実行する主体がAzure FunctionsではなくAzure OpenAI / Foundry側** になります。  
+そのため、Azure OpenAIリソースのManaged IdentityにAI Searchへの権限を付与します。
+
+> ⚠️ **閉域RAGとして成立させるための注意**
+>
+> RBACだけでは不十分です。Azure OpenAI / Foundry から Azure AI Search へ到達できる**プライベートなネットワーク経路**も必要です。  
+> このサンプルでは、前提リポジトリで Shared Private Link または同等のプライベート接続が構成済みであることを前提にしています。
+
+```powershell
+# Azure OpenAI / Foundry リソースにManaged Identityを付与
+az cognitiveservices account identity assign `
+    --resource-group $RESOURCE_GROUP `
+    --name <openai-name>
+
+# Azure OpenAI / Foundry のPrincipal IDを取得
+$OPENAI_PRINCIPAL_ID = az cognitiveservices account show `
+    --resource-group $RESOURCE_GROUP `
+    --name <openai-name> `
+    --query identity.principalId -o tsv
+
+Write-Host "OpenAI Principal ID: $OPENAI_PRINCIPAL_ID"
+
+# Azure OpenAI On Your Data からAI Searchを利用するための権限
 az role assignment create `
-    --assignee $PRINCIPAL_ID `
+    --assignee $OPENAI_PRINCIPAL_ID `
     --role "Search Index Data Reader" `
     --scope "/subscriptions/<subscription-id>/resourceGroups/rg-internal-rag-dev/providers/Microsoft.Search/searchServices/<search-name>"
 
-# Storage Blob Data Reader
 az role assignment create `
-    --assignee $PRINCIPAL_ID `
-    --role "Storage Blob Data Reader" `
-    --scope "/subscriptions/<subscription-id>/resourceGroups/rg-internal-rag-dev/providers/Microsoft.Storage/storageAccounts/<storage-name>"
+    --assignee $OPENAI_PRINCIPAL_ID `
+    --role "Search Service Contributor" `
+    --scope "/subscriptions/<subscription-id>/resourceGroups/rg-internal-rag-dev/providers/Microsoft.Search/searchServices/<search-name>"
 ```
 
-### 12. AI Search Managed Identityの権限設定
+### 13. AI Search Managed Identityの権限設定
 
 AI SearchがBlob Storageからデータを読み取るために、Managed Identityに権限を付与します。
 
@@ -457,7 +485,7 @@ az role assignment create `
     --scope "/subscriptions/<subscription-id>/resourceGroups/rg-internal-rag-dev/providers/Microsoft.Storage/storageAccounts/<storage-name>"
 ```
 
-### 13. 権限設定の確認
+### 14. 権限設定の確認
 
 ```powershell
 # Functions Appの権限を確認
@@ -467,6 +495,10 @@ az role assignment list --all --query "[?principalId=='$PRINCIPAL_ID'].{Role:rol
 # AI Searchの権限を確認
 Write-Host "`nAI Search ロール割り当て:" -ForegroundColor Cyan
 az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
+
+# Azure OpenAI / Foundry の権限を確認
+Write-Host "`nAzure OpenAI ロール割り当て:" -ForegroundColor Cyan
+az role assignment list --all --query "[?principalId=='$OPENAI_PRINCIPAL_ID'].{Role:roleDefinitionName, Scope:scope}" -o table
 ```
 
 ## 確認事項
@@ -484,6 +516,7 @@ az role assignment list --all --query "[?principalId=='$SEARCH_PRINCIPAL_ID'].{R
 - ✅ GitHub Secretsが設定されている
 - ✅ Azure Functionsの環境変数が設定されている
 - ✅ Azure Functions Managed Identityの権限が付与されている
+- ✅ Azure OpenAI / Foundry Managed IdentityにAI Search権限が付与されている
 
 > 📝 **GitHub Self-hosted Runner について**
 > 
